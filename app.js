@@ -1,8 +1,15 @@
 const TEAM_ID = 66; 
 
+const TEAM_ID = 66; 
+const API_KEY = "82dce06505284f3099391c38136fac09";
+
 async function fetchMatchData() {
     try {
-        const response = await fetch('/api/matches');
+        // Pointing to your new Vercel proxy route
+        const response = await fetch('/api/football/teams/66/matches', {
+            headers: { 'X-Auth-Token': API_KEY }
+        });
+        
         if (!response.ok) throw new Error('Network response error');
         
         const data = await response.json();
@@ -13,6 +20,9 @@ async function fetchMatchData() {
         document.getElementById('answer').innerText = "ERROR";
         document.getElementById('details').innerText = "Could not fetch latest data.";
         console.error("Fetch error:", error);
+    }
+
+// Leave processMatches, renderList, and the confetti code exactly as they were!
     }
 }
 
