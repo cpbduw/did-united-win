@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Did United Win?</title>
+
+  <!-- Anton — the matchday poster face -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Anton&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+
+  <!-- Confetti (only loads on win; tree-shaken by browser cache) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/canvas-confetti/1.9.3/confetti.browser.min.js" defer></script>
+
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+
+  <!-- ── Main answer ─────────────────────────────────────────── -->
+  <main>
+    <div class="answer-wrap">
+      <p class="eyebrow">Manchester United</p>
+      <h1 class="answer" id="answer">…</h1>
+      <p class="subtitle" id="subtitle"></p>
+    </div>
+
+    <!-- Last match scorecard -->
+    <section class="scorecard" id="scorecard" hidden>
+      <div class="match-meta" id="match-meta"></div>
+      <div class="scoreline" id="scoreline"></div>
+      <div class="match-date" id="match-date"></div>
+    </section>
+
+    <!-- Recent form -->
+    <section class="form-section" id="form-section" hidden>
+      <h2 class="form-heading">Recent form</h2>
+      <div class="form-groups" id="form-groups"></div>
+    </section>
+  </main>
+
+  <!-- ── Footer ──────────────────────────────────────────────── -->
+  <footer>
+    Data via <a href="https://www.football-data.org" target="_blank" rel="noopener">football-data.org</a>
+    &nbsp;·&nbsp; free tier — scores may be delayed
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
