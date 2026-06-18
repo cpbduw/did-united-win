@@ -1,17 +1,25 @@
 /* app.js — Did United Win? */
 
-const TEAM_ID = 66; // Manchester United
-const TEAM_NAME = 'Manchester United';
+const TEAM_ID   = 66;
+const FALLBACK_TZ = 'Europe/London'; // Manchester time
+
+// User timezone — browser-detected (same result as IP geolocation, no extra request)
+const userTz = (() => {
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone || FALLBACK_TZ; }
+  catch { return FALLBACK_TZ; }
+})();
 
 // ── DOM refs ──────────────────────────────────────────────────────────────
-const elAnswer   = document.getElementById('answer');
-const elSubtitle = document.getElementById('subtitle');
-const elScorecard   = document.getElementById('scorecard');
-const elMatchMeta   = document.getElementById('match-meta');
-const elScoreline   = document.getElementById('scoreline');
-const elMatchDate   = document.getElementById('match-date');
-const elFormSection = document.getElementById('form-section');
-const elFormGroups  = document.getElementById('form-groups');
+const elAnswer        = document.getElementById('answer');
+const elSubtitle      = document.getElementById('subtitle');
+const elScorecard     = document.getElementById('scorecard');
+const elMatchMeta     = document.getElementById('match-meta');
+const elScoreline     = document.getElementById('scoreline');
+const elMatchDate     = document.getElementById('match-date');
+const elResultsSection = document.getElementById('results-section');
+const elFilterBar     = document.getElementById('filter-bar');
+const elResultsList   = document.getElementById('results-list');
+const elTickerContent = document.getElementById('ticker-content');
 
 // ── Boot ──────────────────────────────────────────────────────────────────
 document.body.classList.add('loading');
@@ -28,120 +36,154 @@ async function fetchMatches() {
       throw new Error(json.error || `HTTP ${res.status}`);
     }
     const data = await res.json();
-    render(data.matches || []);
+    render(data.matches || [], data.upcoming || []);
   } catch (err) {
     showError(err.message);
   }
 }
 
 // ── Render ────────────────────────────────────────────────────────────────
-function render(matches) {
+function render(matches, upcoming) {
   document.body.classList.remove('loading');
+
+  renderTicker(upcoming);
 
   if (!matches.length) {
     showOffSeason();
     return;
   }
 
-  const last = matches[matches.length - 1]; // most recent finished match
+  const last   = matches[matches.length - 1];
   const result = getResult(last);
 
-  // ── Page theme & headline
+  // Page theme + headline
   if (result === 'W') {
     document.body.classList.add('win');
-    elAnswer.textContent = 'YES';
-    elSubtitle.textContent = 'United won ✔';
+    elAnswer.textContent  = 'YES';
+    elSubtitle.textContent = 'They won';
     fireConfetti();
   } else if (result === 'D') {
     document.body.classList.add('draw');
-    elAnswer.textContent = 'DRAW';
-    elSubtitle.textContent = 'United drew';
+    elAnswer.textContent  = 'DRAW';
+    elSubtitle.textContent = 'They drew';
   } else {
     document.body.classList.add('loss');
-    elAnswer.textContent = 'NO';
-    elSubtitle.textContent = 'United lost';
+    elAnswer.textContent  = 'NO';
+    elSubtitle.textContent = 'They lost';
   }
 
-  // ── Scorecard
-  const home = last.homeTeam.name;
-  const away = last.awayTeam.name;
-  const hg   = last.score.fullTime.home;
-  const ag   = last.score.fullTime.away;
-  const comp = last.competition.name;
+  // Scorecard
   const isHome = last.homeTeam.id === TEAM_ID;
+  const hg     = last.score.fullTime.home;
+  const ag     = last.score.fullTime.away;
 
-  elMatchMeta.textContent = `${comp} · ${isHome ? 'Home' : 'Away'}`;
+  elMatchMeta.textContent = `${last.competition.name} · ${isHome ? 'Home' : 'Away'}`;
 
-  const homeSpan = `<span class="${last.homeTeam.id === TEAM_ID ? 'team-united' : ''}">${shortName(home)}</span>`;
-  const awaySpan = `<span class="${last.awayTeam.id === TEAM_ID ? 'team-united' : ''}">${shortName(away)}</span>`;
+  const homeSpan = `<span class="${last.homeTeam.id === TEAM_ID ? 'team-united' : ''}">${shortName(last.homeTeam.name)}</span>`;
+  const awaySpan = `<span class="${last.awayTeam.id === TEAM_ID ? 'team-united' : ''}">${shortName(last.awayTeam.name)}</span>`;
   elScoreline.innerHTML = `${homeSpan} ${hg}&ndash;${ag} ${awaySpan}`;
-
   elMatchDate.textContent = formatDate(last.utcDate);
   elScorecard.hidden = false;
 
-  // ── Form grouped by competition
-  renderForm(matches);
+  // Previous results
+  renderResults(matches);
 }
 
-// ── Form ──────────────────────────────────────────────────────────────────
-function renderForm(matches) {
-  // Group by competition name, most-recent match first in each group
-  const groups = {};
-  [...matches].reverse().forEach(m => {
-    const comp = m.competition.name;
-    if (!groups[comp]) groups[comp] = [];
-    groups[comp].push(m);
+// ── Ticker ────────────────────────────────────────────────────────────────
+function renderTicker(upcoming) {
+  if (!upcoming.length) {
+    elTickerContent.classList.add('no-scroll');
+    elTickerContent.textContent = '◆  No upcoming fixtures scheduled  ·  New season fixtures released in June/July  ◆';
+    return;
+  }
+
+  const makeItem = m => {
+    const home   = shortName(m.homeTeam.name);
+    const away   = shortName(m.awayTeam.name);
+    const comp   = m.competition.code || m.competition.name;
+    const dtStr  = formatFixtureDate(m.utcDate);
+    return `<span class="ticker-item">`
+      + `<span class="ticker-comp">${comp}</span>`
+      + `<span class="ticker-dot"> ◆ </span>`
+      + `${home} vs ${away}`
+      + `<span class="ticker-dot"> · </span>`
+      + `${dtStr}`
+      + `</span>`;
+  };
+
+  // Duplicate items for seamless looping
+  const items   = upcoming.map(makeItem).join('<span class="ticker-dot">  ·  </span>');
+  elTickerContent.innerHTML = items + items;
+}
+
+// ── Results list ──────────────────────────────────────────────────────────
+function renderResults(matches) {
+  // Build filter buttons from competitions present in data
+  const comps = [...new Set(matches.map(m => m.competition.name))];
+
+  elFilterBar.innerHTML = '';
+  addFilterBtn('All', 'all', true);
+  comps.forEach(c => addFilterBtn(c, c, false));
+
+  // Show most-recent first
+  const byDate = [...matches].reverse();
+  drawList(byDate);
+
+  elFilterBar.addEventListener('click', e => {
+    const btn = e.target.closest('.filter-btn');
+    if (!btn) return;
+    elFilterBar.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    const f = btn.dataset.comp;
+    drawList(f === 'all' ? byDate : byDate.filter(m => m.competition.name === f));
   });
 
-  elFormGroups.innerHTML = '';
+  elResultsSection.hidden = false;
+}
 
-  Object.entries(groups).forEach(([comp, ms]) => {
-    const div = document.createElement('div');
-    div.className = 'form-group';
+function addFilterBtn(label, value, active) {
+  const btn = document.createElement('button');
+  btn.className    = 'filter-btn' + (active ? ' active' : '');
+  btn.dataset.comp = value;
+  btn.textContent  = label;
+  elFilterBar.appendChild(btn);
+}
 
-    const heading = document.createElement('div');
-    heading.className = 'form-group-name';
-    heading.textContent = comp;
-    div.appendChild(heading);
+function drawList(matches) {
+  elResultsList.innerHTML = '';
+
+  matches.forEach(m => {
+    const r          = getResult(m);
+    const hg         = m.score.fullTime.home;
+    const ag         = m.score.fullTime.away;
+    const homeUnited = m.homeTeam.id === TEAM_ID;
+    const awayUnited = m.awayTeam.id === TEAM_ID;
 
     const row = document.createElement('div');
-    row.className = 'form-row';
-
-    ms.forEach(m => {
-      const r = getResult(m);
-      const opp = m.homeTeam.id === TEAM_ID ? m.awayTeam.name : m.homeTeam.name;
-      const hg  = m.score.fullTime.home;
-      const ag  = m.score.fullTime.away;
-
-      const item = document.createElement('div');
-      item.className = 'form-item';
-      item.title = `${formatDate(m.utcDate)}`;
-
-      item.innerHTML = `<span class="badge badge-${r}">${r}</span> vs ${shortName(opp)} ${hg}–${ag}`;
-      row.appendChild(item);
-    });
-
-    div.appendChild(row);
-    elFormGroups.appendChild(div);
+    row.className = 'result-row';
+    row.innerHTML = `
+      <span class="badge badge-${r}">${r}</span>
+      <div class="result-row-content">
+        <div class="result-row-score">
+          <span class="team${homeUnited ? ' is-united' : ''}">${shortName(m.homeTeam.name)}</span>
+          <span class="score">${hg}&ndash;${ag}</span>
+          <span class="team away${awayUnited ? ' is-united' : ''}">${shortName(m.awayTeam.name)}</span>
+        </div>
+        <div class="result-row-meta">${m.competition.name} · ${formatDate(m.utcDate)}</div>
+      </div>`;
+    elResultsList.appendChild(row);
   });
-
-  elFormSection.hidden = false;
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────
-
-/** Returns 'W', 'D', or 'L' from United's perspective. */
 function getResult(match) {
-  const hg = match.score.fullTime.home;
-  const ag = match.score.fullTime.away;
+  const hg     = match.score.fullTime.home;
+  const ag     = match.score.fullTime.away;
   const isHome = match.homeTeam.id === TEAM_ID;
-
   if (hg === ag) return 'D';
-  const unitedWon = isHome ? hg > ag : ag > hg;
-  return unitedWon ? 'W' : 'L';
+  return (isHome ? hg > ag : ag > hg) ? 'W' : 'L';
 }
 
-/** Shortens long club names to fit on one line. */
 function shortName(name) {
   const map = {
     'Manchester United FC': 'Man Utd',
@@ -164,46 +206,55 @@ function shortName(name) {
     'Leicester City FC':    'Leicester',
     'Ipswich Town FC':      'Ipswich',
     'Southampton FC':       'Southampton',
+    'Leeds United FC':      'Leeds',
+    'Paris Saint-Germain FC': 'PSG',
+    'Real Madrid CF':       'Real Madrid',
+    'FC Barcelona':         'Barcelona',
+    'Bayern München':       'Bayern',
+    'Atletico de Madrid':   'Atlético',
   };
   return map[name] || name.replace(/ FC$/, '');
 }
 
-/** Formats an ISO date string as "Sat 14 Jun 2025". */
 function formatDate(iso) {
-  const d = new Date(iso);
-  return d.toLocaleDateString('en-GB', {
+  return new Date(iso).toLocaleDateString('en-GB', {
     weekday: 'short', day: 'numeric', month: 'short', year: 'numeric',
   });
 }
 
-// ── Off-season / error states ─────────────────────────────────────────────
+function formatFixtureDate(iso) {
+  return new Date(iso).toLocaleString('en-GB', {
+    weekday: 'short', day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+    timeZone: userTz,
+    timeZoneName: 'short',
+  });
+}
+
+// ── States ────────────────────────────────────────────────────────────────
 function showOffSeason() {
-  elAnswer.textContent = '–';
-  elSubtitle.textContent = 'No finished matches found · Season may not have started yet';
+  elAnswer.textContent   = '–';
+  elSubtitle.textContent = 'No recent matches · Off season';
 }
 
 function showError(msg) {
   document.body.classList.remove('loading');
-  elAnswer.textContent = '?';
+  elAnswer.textContent   = '?';
   elSubtitle.textContent = `Error: ${msg}`;
 }
 
 // ── Confetti ──────────────────────────────────────────────────────────────
 function fireConfetti() {
-  // Respect reduced-motion preference
   if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
   if (typeof confetti !== 'function') return;
 
-  // United red + white burst
-  const opts = {
-    particleCount: 120,
-    spread: 80,
-    origin: { y: 0.55 },
+  const base = {
+    spread: 90,
     colors: ['#DA291C', '#ffffff', '#FBE122'],
   };
-
-  confetti(opts);
-  // Second burst offset slightly for depth
-  setTimeout(() => confetti({ ...opts, particleCount: 60, origin: { y: 0.5, x: 0.3 } }), 200);
-  setTimeout(() => confetti({ ...opts, particleCount: 60, origin: { y: 0.5, x: 0.7 } }), 350);
+  // Three bursts at slight offsets
+  confetti({ ...base, particleCount: 160, origin: { y: 0.6 } });
+  setTimeout(() => confetti({ ...base, particleCount: 90, origin: { y: 0.55, x: 0.25 } }), 280);
+  setTimeout(() => confetti({ ...base, particleCount: 90, origin: { y: 0.55, x: 0.75 } }), 460);
+  setTimeout(() => confetti({ ...base, particleCount: 60, spread: 130, origin: { y: 0.45 } }), 720);
 }
