@@ -91,17 +91,11 @@ function render(matches, upcoming) {
 
 // ── Ticker ────────────────────────────────────────────────────────────────
 function renderTicker(upcoming) {
-  if (!upcoming.length) {
-    elTickerContent.classList.add('no-scroll');
-    elTickerContent.textContent = '◆  No upcoming fixtures scheduled  ·  New season fixtures released in June/July  ◆';
-    return;
-  }
-
   const makeItem = m => {
-    const home   = shortName(m.homeTeam.name);
-    const away   = shortName(m.awayTeam.name);
-    const comp   = m.competition.code || m.competition.name;
-    const dtStr  = formatFixtureDate(m.utcDate);
+    const home  = shortName(m.homeTeam.name);
+    const away  = shortName(m.awayTeam.name);
+    const comp  = m.competition.code || m.competition.name;
+    const dtStr = formatFixtureDate(m.utcDate);
     return `<span class="ticker-item">`
       + `<span class="ticker-comp">${comp}</span>`
       + `<span class="ticker-dot"> ◆ </span>`
@@ -111,9 +105,21 @@ function renderTicker(upcoming) {
       + `</span>`;
   };
 
-  // Duplicate items for seamless looping
-  const items   = upcoming.map(makeItem).join('<span class="ticker-dot">  ·  </span>');
-  elTickerContent.innerHTML = items + items;
+  let singleSet;
+  if (!upcoming.length) {
+    // Off-season — repeat placeholder enough times to fill any screen width
+    const placeholder = `<span class="ticker-item">`
+      + `<span class="ticker-comp">UNITED</span>`
+      + `<span class="ticker-dot"> ◆ </span>`
+      + `No upcoming fixtures · New season starts August 2026`
+      + `</span>`;
+    singleSet = placeholder.repeat(4);
+  } else {
+    singleSet = upcoming.map(makeItem).join('<span class="ticker-dot">  ◇  </span>');
+  }
+
+  // Duplicate for seamless CSS loop (animate translateX 0 → -50%)
+  elTickerContent.innerHTML = singleSet + singleSet;
 }
 
 // ── Results list ──────────────────────────────────────────────────────────
