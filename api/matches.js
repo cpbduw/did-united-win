@@ -1,17 +1,10 @@
 // api/matches.js — Vercel serverless function
-// Proxies football-data.org so the API key never leaves the server.
-//
-// FREE TIER NOTE: /v4/teams/{id}/matches is a paid endpoint.
-// Free tier only allows competition-scoped queries, so we fetch
-// Premier League + Champions League matches filtered by team ID,
-// then merge and sort them ourselves.
+// Free tier: /v4/teams/{id}/matches is restricted. We query competition
+// endpoints instead and filter for United server-side.
 
 const TEAM_ID = 66; // Manchester United
 const API_BASE = 'https://api.football-data.org/v4';
-
-// Free-tier competitions United could appear in.
-// 403s from competitions they're not in are silently ignored.
-const COMPETITIONS = ['PL', 'CL'];
+const COMPETITIONS = ['PL', 'CL']; // Free-tier comps United play in
 
 module.exports = async function handler(req, res) {
   const apiKey = process.env.FOOTBALL_DATA_API_KEY;
@@ -27,25 +20,36 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // Query each competition; free tier ignores the team= filter so we
-    // filter server-side instead. 403s (not in that comp) are silently skipped.
+    // One request per competition; 403s (not in that comp) are skipped silently
     const results = await Promise.all(
       COMPETITIONS.map(comp =>
-        fetch(`${API_BASE}/competitions/${comp}/matches?status=FINISHED`, {
+        fetch(`${API_BASE}/competitions/${comp}/matches`, {
           headers: { 'X-Auth-Token': apiKey },
-        }).then(r => (r.ok ? r.json() : null))
+        })
+          .then(r => (r.ok ? r.json() : null))
+          .catch(() => null)
       )
     );
 
-    // Merge, keep only United matches, sort oldest→newest, keep last 10
-    let matches = results
+    // All United matches across all comps
+    const all = results
       .flatMap(d => (d && d.matches) ? d.matches : [])
-      .filter(m => m.homeTeam.id === TEAM_ID || m.awayTeam.id === TEAM_ID)
+      .filter(m => m.homeTeam.id === TEAM_ID || m.awayTeam.id === TEAM_ID);
+
+    // Last 10 finished, oldest → newest (client reads last element as most recent)
+    const finished = all
+      .filter(m => m.status === 'FINISHED')
       .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
       .slice(-10);
 
+    // Next 3 upcoming, soonest first
+    const upcoming = all
+      .filter(m => ['SCHEDULED', 'TIMED'].includes(m.status))
+      .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
+      .slice(0, 3);
+
     res.setHeader('Cache-Control', 's-maxage=300, stale-while-revalidate=60');
-    res.status(200).json({ matches });
+    res.status(200).json({ matches: finished, upcoming });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
