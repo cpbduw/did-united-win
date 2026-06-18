@@ -27,18 +27,20 @@ module.exports = async function handler(req, res) {
   }
 
   try {
-    // Query each competition in parallel; ignore 403s (not in that comp this season)
+    // Query each competition; free tier ignores the team= filter so we
+    // filter server-side instead. 403s (not in that comp) are silently skipped.
     const results = await Promise.all(
       COMPETITIONS.map(comp =>
-        fetch(`${API_BASE}/competitions/${comp}/matches?team=${TEAM_ID}&status=FINISHED`, {
+        fetch(`${API_BASE}/competitions/${comp}/matches?status=FINISHED`, {
           headers: { 'X-Auth-Token': apiKey },
         }).then(r => (r.ok ? r.json() : null))
       )
     );
 
-    // Merge all matches, sort oldest→newest, keep last 10
+    // Merge, keep only United matches, sort oldest→newest, keep last 10
     let matches = results
       .flatMap(d => (d && d.matches) ? d.matches : [])
+      .filter(m => m.homeTeam.id === TEAM_ID || m.awayTeam.id === TEAM_ID)
       .sort((a, b) => new Date(a.utcDate) - new Date(b.utcDate))
       .slice(-10);
 
